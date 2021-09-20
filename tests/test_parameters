@@ -9,8 +9,6 @@ SRCDIR=${abs_top_srcdir:-$(dirname "$0")/..}
 PATH=$ROOT/src/swtpm:$PATH
 
 PARAMETERS=(
-	""
-	"--createek"
 	"--take-ownership"
 	"--createek --lock-nvram"
 	"--take-ownership --lock-nvram"
@@ -88,10 +86,10 @@ PATH=$PATH:$PWD
 for (( i=0; i<${#PARAMETERS[*]}; i++)); do
 	rm -rf $TPMDIR/*
 	echo -n "Test $i: "
-	$TPMAUTHORING \
+	gdb --args $TPMAUTHORING \
 		--tpm-state $TPMDIR \
 		--tpm "$SWTPM_EXE socket ${SWTPM_TEST_SECCOMP_OPT}" \
-		${PARAMETERS[$i]} 2>&1 >/dev/null
+		${PARAMETERS[$i]} #2>&1 >/dev/null
 
 	if [ $? -ne 0 ]; then
 		echo "ERROR: Test with parameters '${PARAMETERS[$i]}' failed."
