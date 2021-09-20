@@ -26,6 +26,11 @@
 #include <openssl/hmac.h>
 #include <openssl/rsa.h>
 #include <openssl/sha.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+# include <openssl/core_names.h>
+#else
+# include <openssl/rsa.h>
+#endif
 
 #include "swtpm.h"
 #include "swtpm_utils.h"
@@ -1545,7 +1550,9 @@ static int swtpm_tpm12_take_ownership(struct swtpm *self, const unsigned char ow
     EVP_PKEY_CTX *ctx = NULL;
     BIGNUM *exp = BN_new();
     BIGNUM *mod = NULL;
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
     RSA *rsakey = RSA_new();
+#endif
     int ret = 1;
     const EVP_MD *sha1 = EVP_sha1();
     g_autofree unsigned char *enc_owner_auth = g_malloc(pubek_len);
@@ -1586,15 +1593,33 @@ static int swtpm_tpm12_take_ownership(struct swtpm *self, const unsigned char ow
         goto error_free_bn;
     }
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    if ((ctx = EVP_PKEY_CTX_new_from_name(NULL, "rsa", NULL)) == NULL) {
+        logerr(self->logfile, "Could not initialize pkey with keymgmt!\n");
+        goto error_free_bn;
+    }
+    {
+        OSSL_PARAM params[3] = {
+            OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_E, exp, BN_num_bytes(exp)),
+            OSSL_PARAM_BN(OSSL_PKEY_PARAM_RSA_N, mod, BN_num_bytes(mod)),
+            OSSL_PARAM_END
+        };
+        if (EVP_PKEY_fromdata_init(ctx) != 1 ||
+            EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_KEY_PARAMETERS, params) != 1) {
+            logerr(self->logfile, "Could not set pkey parameters!\n");
+            goto error_free_bn;
+        }
+    }
+#else
+# if OPENSSL_VERSION_NUMBER < 0x10100000
     rsakey->n = mod;
     rsakey->e = exp;
-#else
+# else
     if (RSA_set0_key(rsakey, mod, exp, NULL) != 1) {
         logerr(self->logfile, "Could not create public RSA key!\n");
         goto error_free_bn;
     }
-#endif
+# endif
     if (EVP_PKEY_assign_RSA(pkey, rsakey) != 1) {
         logerr(self->logfile, "Could not create public RSA key!\n");
         goto error_free_pkey_and_rsa;
@@ -1603,6 +1628,7 @@ static int swtpm_tpm12_take_ownership(struct swtpm *self, const unsigned char ow
     ctx = EVP_PKEY_CTX_new(pkey, NULL);
     if (ctx == NULL)
         goto error_free_pkey;
+#endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
 
     if (EVP_PKEY_encrypt_init(ctx) < 1 ||
         EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_OAEP_PADDING) < 1 ||
@@ -1712,15 +1738,21 @@ static int swtpm_tpm12_take_ownership(struct swtpm *self, const unsigned char ow
 error:
     EVP_PKEY_free(pkey);
     EVP_PKEY_CTX_free(ctx);
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    BN_free(exp);
+    BN_free(mod);
+#endif
     return ret;
 
 error_free_bn:
     BN_free(exp);
     BN_free(mod);
 
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
 error_free_pkey_and_rsa:
     RSA_free(rsakey);
 error_free_pkey:
+#endif
     EVP_PKEY_free(pkey);
 
     return 1;
