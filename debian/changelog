@@ -1,3 +1,9 @@
+swtpm (0.6.0~1ppa1-hirsute1) hirsute; urgency=medium
+
+  * update build target to hirsute
+
+ -- Lee Chee Yang <chee.yang.lee@intel.com>  Tue, 21 Sep 2021 09:49:59 +0800
+
 swtpm (0.6.0) RELEASED; urgency=medium
 
   * Stable release
